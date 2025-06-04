@@ -16,6 +16,13 @@ const openai = new OpenAI({
   baseOptions: { timeout: 120_000 }
 });
 
+const oauth2Client = new google.auth.OAuth2();
+
+async function getHighRetentionRanges(videoId, client) {
+  // Placeholder implementation. Task 3 provides the real logic.
+  return [];
+}
+
 ffmpeg.setFfmpegPath(require('ffmpeg-static'));
 
 const app = express();
@@ -96,28 +103,16 @@ app.get('/api/clips', async (req, res) => {
     }
   }
 
-  // find peaks via comments
-  const comments = await youtube.commentThreads.list({
-    part: 'snippet', videoId, maxResults: 100, textFormat: 'plainText'
-  });
-  const freq = {};
-  const regex = /\b(\d{1,2}):([0-5]\d)\b/g;
-  comments.data.items.forEach(item => {
-    let m, txt = item.snippet.topLevelComment.snippet.textDisplay;
-    while ((m = regex.exec(txt)) !== null) {
-      const t = +m[1]*60 + +m[2];
-      freq[t] = (freq[t] || 0) + 1;
-    }
-  });
-  const peaks = Object.entries(freq)
-    .sort((a,b) => b[1] - a[1])
-    .map(([t]) => +t)
-    .slice(0, 3);
+  // find high retention segments using YouTube Analytics
+  // Example: retentionRanges = [{ startSec: 42, endSec: 72 }, …]
+  const retentionRanges = await getHighRetentionRanges(videoId, oauth2Client);
 
   const results = [];
 
-  for (const peak of peaks) {
-    const start = Math.max(peak - 5, 0), end = start + 30;
+  for (const { startSec, endSec } of retentionRanges) {
+    const clipStart = Math.floor(startSec);
+    const clipDuration = Math.floor(endSec - startSec);
+    const start = Math.max(clipStart, 0), end = start + clipDuration;
 
     // 1) Download main clip w/ audio
     const mainName = `${videoId}_${start}.mp4`;
