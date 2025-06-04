@@ -236,11 +236,19 @@ app.get('/api/clips', async (req, res) => {
       const finalPath = path.join(clipsDir, finalName);
       await new Promise((resolve, reject) => {
         ffmpeg(intermediate)
-          .videoFilter(`subtitles=${srtPath}`)
-          .outputOptions(['-c:a','copy','-shortest'])
+          .addInputOption('-hwaccel', 'auto')
+          .input(intermediate)
+          .videoFilter(`subtitles=${srtPath.replace(/\\/g, '\\\\')}`)
+          .outputOptions([
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-c:a', 'copy',
+            '-movflags', '+faststart',
+            '-threads', '1'
+          ])
           .on('stderr', console.error)
-          .on('end', resolve)
-          .on('error', reject)
+          .on('end', () => { resolve(); })
+          .on('error', err => { reject(err); })
           .save(finalPath);
       });
       results.push({ url: `/clips/${finalName}`, start, end });
