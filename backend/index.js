@@ -40,6 +40,10 @@ function toHHMMSS(sec) {
   return `${h}:${m}:${s}`;
 }
 
+function escapeDrawtext(str) {
+  return str.replace(/:/g, '\\:').replace(/'/g, "\\'");
+}
+
 async function getLatestVideoId(channelId) {
   const resp = await youtube.search.list({
     part: 'id', channelId, order: 'date', maxResults: 1
@@ -73,7 +77,7 @@ app.get('/api/openai-test', async (_req, res) => {
 });
 
 app.get('/api/clips', async (req, res) => {
-  let { videoUrl, fontFamily, fontSize, color, outline, position, background } = req.query;
+  let { videoUrl, captionText, fontFamily, fontSize, color, outline, position, background } = req.query;
   if (!videoUrl) return res.status(400).json({ message: 'videoUrl is required' });
 
   fontSize = Number(fontSize) || 24;
@@ -230,17 +234,57 @@ app.get('/api/clips', async (req, res) => {
       }
     }
 
+ codex/wrap-subtitle-burning-in-file-existence-check
     // 5) Burn in subtitles if available
     const finalName = `${videoId}_${start}_final.mp4`;
     const finalPath = path.join(clipsDir, finalName);
     if (srtPath && fs.existsSync(srtPath)) {
+
+    // 5) Burn in subtitles / caption text if provided
+    const filters = [];
+    if (srtPath) filters.push(`subtitles=${srtPath}`);
+    if (captionText) {
+      const yExpr = position === 'top'
+        ? '10'
+        : position === 'center'
+          ? '(h-text_h)/2'
+          : 'h-text_h-10';
+      const draw = [
+        `font=${fontFamily}`,
+        `text='${escapeDrawtext(captionText)}'`,
+        `fontcolor=${color}`,
+        `fontsize=${fontSize}`,
+        'x=(w-text_w)/2',
+        `y=${yExpr}`,
+        outline ? 'bordercolor=black:borderw=2' : 'borderw=0'
+      ].join(':');
+      filters.push(`drawtext=${draw}`);
+    }
+
+    if (filters.length) {
+      const finalName = `${videoId}_${start}_final.mp4`;
+      const finalPath = path.join(clipsDir, finalName);
+ main
       await new Promise((resolve, reject) => {
         ffmpeg(intermediate)
-          .videoFilter(`subtitles=${srtPath}`)
+ codex/modify-ffmpeg-command-to-apply-subtitles
+          .addInputOption('-hwaccel', 'auto')
+          .input(intermediate)
+          .videoFilter(`subtitles=${srtPath.replace(/\\/g, '\\\\')}`)
+          .outputOptions([
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-c:a', 'copy',
+            '-movflags', '+faststart',
+            '-threads', '1'
+          ])
+
+          .videoFilter(filters.join(','))
           .outputOptions(['-c:a','copy','-shortest'])
+        main
           .on('stderr', console.error)
-          .on('end', resolve)
-          .on('error', reject)
+          .on('end', () => { resolve(); })
+          .on('error', err => { reject(err); })
           .save(finalPath);
       });
     } else {
