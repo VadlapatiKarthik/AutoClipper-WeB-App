@@ -138,9 +138,43 @@ app.get('/api/openai-test', async (_req, res) => {
   }
 });
 
+const CLIENT_ID = process.env.TWITCH_CLIENT_ID;
+const OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN;
+
+async function getTwitchChatSpikes(clientId, oauthToken, streamerName) {
+  // TODO: Implement actual chat spike detection
+  // Placeholder implementation returns an empty array
+  console.log('getTwitchChatSpikes called for', streamerName);
+  return [];
+}
+
 app.get('/api/clips', async (req, res) => {
+  codex/modify-/api/clips-route-for-conditional-logic
+  const { source, streamerName, videoUrl, fontFamily, fontSize, color, outline, position, background } = req.query;
+
+  let results = [];
+
+  if (source === 'twitch') {
+    if (!streamerName) return res.status(400).json({ message: 'streamerName is required for Twitch' });
+
+    try {
+      const spikes = await getTwitchChatSpikes(CLIENT_ID, OAUTH_TOKEN, streamerName);
+      for (const { timestampSec, durationSec } of spikes) {
+        // TODO: Download and clip VOD at timestampSec/durationSec
+        const finalName = `${streamerName}_${timestampSec}.mp4`;
+        results.push({ url: `/clips/${finalName}`, start: timestampSec, end: timestampSec + durationSec });
+      }
+    } catch (err) {
+      console.error('Twitch processing error:', err);
+      return res.status(500).json({ message: err.message });
+    }
+  } else if (source === 'youtube') {
+    if (!videoUrl) return res.status(400).json({ message: 'videoUrl is required for YouTube' });
+
+
   let { videoUrl, captionText, fontFamily, fontSize, color, outline, position, background } = req.query;
   if (!videoUrl) return res.status(400).json({ message: 'videoUrl is required' });
+ main
 
   fontSize = Number(fontSize) || 24;
   outline  = outline === 'true';
@@ -170,7 +204,7 @@ app.get('/api/clips', async (req, res) => {
  main
   const retentionRanges = await getHighRetentionRanges(videoId, oauth2Client);
 
-  const results = [];
+  results = [];
 
   for (const { startSec, endSec } of retentionRanges) {
     const clipStart = Math.floor(startSec);
@@ -351,6 +385,9 @@ app.get('/api/clips', async (req, res) => {
       fs.copyFileSync(intermediate, finalPath);
     }
     results.push({ url: `/clips/${finalName}`, start, end });
+  }
+  else {
+    return res.status(400).json({ message: 'Invalid source param' });
   }
 
   res.json({ clips: results });
