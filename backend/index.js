@@ -231,9 +231,9 @@ app.get('/api/clips', async (req, res) => {
     }
 
     // 5) Burn in subtitles if available
-    if (srtPath) {
-      const finalName = `${videoId}_${start}_final.mp4`;
-      const finalPath = path.join(clipsDir, finalName);
+    const finalName = `${videoId}_${start}_final.mp4`;
+    const finalPath = path.join(clipsDir, finalName);
+    if (srtPath && fs.existsSync(srtPath)) {
       await new Promise((resolve, reject) => {
         ffmpeg(intermediate)
           .videoFilter(`subtitles=${srtPath}`)
@@ -243,10 +243,11 @@ app.get('/api/clips', async (req, res) => {
           .on('error', reject)
           .save(finalPath);
       });
-      results.push({ url: `/clips/${finalName}`, start, end });
     } else {
-      results.push({ url: `/clips/${path.basename(intermediate)}`, start, end });
+      console.warn('Subtitle file not found or invalid: ' + srtPath);
+      fs.copyFileSync(intermediate, finalPath);
     }
+    results.push({ url: `/clips/${finalName}`, start, end });
   }
 
   res.json({ clips: results });
