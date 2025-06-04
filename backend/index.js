@@ -7,6 +7,8 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
+const { OAuth2 } = google.auth;
+const { getHighRetentionRanges } = require('./analytics');
 const ytdl = require('ytdl-core');
 const ffmpeg = require('fluent-ffmpeg');
 const ytdlp = require('yt-dlp-exec');
@@ -16,11 +18,21 @@ const openai = new OpenAI({
   baseOptions: { timeout: 120_000 }
 });
 
+ codex/replace-youtube-comment-parsing-with-retentionranges-logic
+const oauth2Client = new OAuth2(
+  process.env.YT_CLIENT_ID,
+  process.env.YT_CLIENT_SECRET,
+  process.env.YT_REDIRECT_URI
+);
+if (process.env.YT_REFRESH_TOKEN) {
+  oauth2Client.setCredentials({ refresh_token: process.env.YT_REFRESH_TOKEN });
+
 const oauth2Client = new google.auth.OAuth2();
 
 async function getHighRetentionRanges(videoId, client) {
   // Placeholder implementation. Task 3 provides the real logic.
   return [];
+  main
 }
 
 ffmpeg.setFfmpegPath(require('ffmpeg-static'));
@@ -150,8 +162,12 @@ app.get('/api/clips', async (req, res) => {
     }
   }
 
+ codex/replace-youtube-comment-parsing-with-retentionranges-logic
+  // get video retention data
+
   // find high retention segments using YouTube Analytics
   // Example: retentionRanges = [{ startSec: 42, endSec: 72 }, …]
+ main
   const retentionRanges = await getHighRetentionRanges(videoId, oauth2Client);
 
   const results = [];
@@ -159,7 +175,12 @@ app.get('/api/clips', async (req, res) => {
   for (const { startSec, endSec } of retentionRanges) {
     const clipStart = Math.floor(startSec);
     const clipDuration = Math.floor(endSec - startSec);
+ codex/replace-youtube-comment-parsing-with-retentionranges-logic
+    const start = clipStart;
+    const end = start + clipDuration;
+
     const start = Math.max(clipStart, 0), end = start + clipDuration;
+ main
 
     // 1) Download main clip w/ audio
     const mainName = `${videoId}_${start}.mp4`;
