@@ -7,6 +7,8 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
+const { OAuth2 } = google.auth;
+const { getHighRetentionRanges } = require('./analytics');
 const ytdl = require('ytdl-core');
 const ffmpeg = require('fluent-ffmpeg');
 const ytdlp = require('yt-dlp-exec');
@@ -15,6 +17,15 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   baseOptions: { timeout: 120_000 }
 });
+
+const oauth2Client = new OAuth2(
+  process.env.YT_CLIENT_ID,
+  process.env.YT_CLIENT_SECRET,
+  process.env.YT_REDIRECT_URI
+);
+if (process.env.YT_REFRESH_TOKEN) {
+  oauth2Client.setCredentials({ refresh_token: process.env.YT_REFRESH_TOKEN });
+}
 
 ffmpeg.setFfmpegPath(require('ffmpeg-static'));
 
@@ -96,28 +107,16 @@ app.get('/api/clips', async (req, res) => {
     }
   }
 
-  // find peaks via comments
-  const comments = await youtube.commentThreads.list({
-    part: 'snippet', videoId, maxResults: 100, textFormat: 'plainText'
-  });
-  const freq = {};
-  const regex = /\b(\d{1,2}):([0-5]\d)\b/g;
-  comments.data.items.forEach(item => {
-    let m, txt = item.snippet.topLevelComment.snippet.textDisplay;
-    while ((m = regex.exec(txt)) !== null) {
-      const t = +m[1]*60 + +m[2];
-      freq[t] = (freq[t] || 0) + 1;
-    }
-  });
-  const peaks = Object.entries(freq)
-    .sort((a,b) => b[1] - a[1])
-    .map(([t]) => +t)
-    .slice(0, 3);
+  // get video retention data
+  const retentionRanges = await getHighRetentionRanges(videoId, oauth2Client);
 
   const results = [];
 
-  for (const peak of peaks) {
-    const start = Math.max(peak - 5, 0), end = start + 30;
+  for (const { startSec, endSec } of retentionRanges) {
+    const clipStart = Math.floor(startSec);
+    const clipDuration = Math.floor(endSec - startSec);
+    const start = clipStart;
+    const end = start + clipDuration;
 
     // 1) Download main clip w/ audio
     const mainName = `${videoId}_${start}.mp4`;
