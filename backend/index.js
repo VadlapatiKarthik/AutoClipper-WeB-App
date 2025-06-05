@@ -18,7 +18,6 @@ const openai = new OpenAI({
   baseOptions: { timeout: 120_000 }
 });
 
- codex/replace-youtube-comment-parsing-with-retentionranges-logic
 const oauth2Client = new OAuth2(
   process.env.YT_CLIENT_ID,
   process.env.YT_CLIENT_SECRET,
@@ -26,13 +25,6 @@ const oauth2Client = new OAuth2(
 );
 if (process.env.YT_REFRESH_TOKEN) {
   oauth2Client.setCredentials({ refresh_token: process.env.YT_REFRESH_TOKEN });
-
-const oauth2Client = new google.auth.OAuth2();
-
-async function getHighRetentionRanges(videoId, client) {
-  // Placeholder implementation. Task 3 provides the real logic.
-  return [];
-  main
 }
 
 ffmpeg.setFfmpegPath(require('ffmpeg-static'));
@@ -46,7 +38,6 @@ if (!fs.existsSync(clipsDir)) fs.mkdirSync(clipsDir);
 app.use('/clips', express.static(clipsDir));
 
 const youtube = google.youtube({ version: 'v3', auth: process.env.YT_API_KEY });
-const youtubeAnalytics = google.youtubeAnalytics('v2');
 const backgroundSources = {
   minecraft:    'https://www.youtube.com/watch?v=85z7jqGAGcc',
   gta5:         'https://www.youtube.com/watch?v=EUNw8oY3W7g',
@@ -60,50 +51,8 @@ function toHHMMSS(sec) {
   return `${h}:${m}:${s}`;
 }
 
-codex/create-helper-function-for-youtube-analytics-query
-function parseISODuration(dur) {
-  const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(dur);
-  return (m && (
-    (m[1] ? +m[1] * 3600 : 0) +
-    (m[2] ? +m[2] * 60 : 0) +
-    (m[3] ? +m[3] : 0)
-  )) || 0;
-}
-
-async function getHighRetentionRanges(videoId, oauth2Client) {
-  const detailResp = await youtube.videos.list({ part: 'contentDetails', id: videoId });
-  if (!detailResp.data.items.length) throw new Error('Video not found');
-  const durationSec = parseISODuration(detailResp.data.items[0].contentDetails.duration);
-
-  const resp = await youtubeAnalytics.reports.query({
-    auth: oauth2Client,
-    ids: 'channel==MINE',
-    startDate: '2020-01-01',
-    endDate: new Date().toISOString().slice(0, 10),
-    metrics: 'relativeRetentionPerformance',
-    dimensions: 'elapsedVideoTimeRatio',
-    filters: `video==${videoId}`,
-    maxResults: 200
-  });
-  const rows = resp.data.rows || [];
-  const ranges = [];
-  for (let i = 0; i < rows.length; i++) {
-    const [ratio, retention] = rows[i];
-    const nextRatio = i < rows.length - 1 ? rows[i + 1][0] : 1;
-    if (retention > 1.0) {
-      ranges.push({
-        start: Math.round(ratio * durationSec),
-        end: Math.round(nextRatio * durationSec),
-        retention
-      });
-    }
-  }
-  ranges.sort((a, b) => b.retention - a.retention);
-  return ranges.map(r => [r.start, r.end]);
-
 function escapeDrawtext(str) {
   return str.replace(/:/g, '\\:').replace(/'/g, "\\'");
-  main
 }
 
 async function getLatestVideoId(channelId) {
@@ -143,24 +92,20 @@ const OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN;
 
 async function getTwitchChatSpikes(clientId, oauthToken, streamerName) {
   // TODO: Implement actual chat spike detection
-  // Placeholder implementation returns an empty array
   console.log('getTwitchChatSpikes called for', streamerName);
   return [];
 }
 
 app.get('/api/clips', async (req, res) => {
-  codex/modify-/api/clips-route-for-conditional-logic
-  const { source, streamerName, videoUrl, fontFamily, fontSize, color, outline, position, background } = req.query;
+  const { source, streamerName, videoUrl, captionText, fontFamily, fontSize, color, outline, position, background } = req.query;
 
   let results = [];
 
   if (source === 'twitch') {
     if (!streamerName) return res.status(400).json({ message: 'streamerName is required for Twitch' });
-
     try {
       const spikes = await getTwitchChatSpikes(CLIENT_ID, OAUTH_TOKEN, streamerName);
       for (const { timestampSec, durationSec } of spikes) {
-        // TODO: Download and clip VOD at timestampSec/durationSec
         const finalName = `${streamerName}_${timestampSec}.mp4`;
         results.push({ url: `/clips/${finalName}`, start: timestampSec, end: timestampSec + durationSec });
       }
@@ -171,222 +116,187 @@ app.get('/api/clips', async (req, res) => {
   } else if (source === 'youtube') {
     if (!videoUrl) return res.status(400).json({ message: 'videoUrl is required for YouTube' });
 
+    let vidUrl = videoUrl;
+    let fFamily = fontFamily;
+    let fSize = Number(fontSize) || 24;
+    let fColor = color;
+    let fOutline = outline === 'true';
+    let pos = position || 'bottom';
 
-  let { videoUrl, captionText, fontFamily, fontSize, color, outline, position, background } = req.query;
-  if (!videoUrl) return res.status(400).json({ message: 'videoUrl is required' });
- main
+    try { vidUrl = decodeURIComponent(vidUrl); } catch {}
+    vidUrl = vidUrl.trim().replace(/<|>/g, '');
 
-  fontSize = Number(fontSize) || 24;
-  outline  = outline === 'true';
-  position = position || 'bottom';
-
-  try { videoUrl = decodeURIComponent(videoUrl); } catch {}
-  videoUrl = videoUrl.trim().replace(/<|>/g, '');
-
-  let videoId, normalized;
-  if (/^[A-Za-z0-9_-]{11}$/.test(videoUrl)) {
-    videoId = videoUrl;
-    normalized = `https://youtu.be/${videoId}`;
-  } else {
-    normalized = videoUrl;
-    try {
-      videoId = ytdl.getURLVideoID(normalized);
-    } catch {
-      return res.status(400).json({ message: 'Invalid videoUrl' });
+    let videoId, normalized;
+    if (/^[A-Za-z0-9_-]{11}$/.test(vidUrl)) {
+      videoId = vidUrl;
+      normalized = `https://youtu.be/${videoId}`;
+    } else {
+      normalized = vidUrl;
+      try {
+        videoId = ytdl.getURLVideoID(normalized);
+      } catch {
+        return res.status(400).json({ message: 'Invalid videoUrl' });
+      }
     }
-  }
 
- codex/replace-youtube-comment-parsing-with-retentionranges-logic
-  // get video retention data
+    const retentionRanges = await getHighRetentionRanges(videoId, oauth2Client);
 
-  // find high retention segments using YouTube Analytics
-  // Example: retentionRanges = [{ startSec: 42, endSec: 72 }, …]
- main
-  const retentionRanges = await getHighRetentionRanges(videoId, oauth2Client);
+    results = [];
 
-  results = [];
+    for (const { startSec, endSec } of retentionRanges) {
+      const clipStart = Math.floor(startSec);
+      const clipDuration = Math.floor(endSec - startSec);
+      const start = Math.max(clipStart, 0), end = start + clipDuration;
 
-  for (const { startSec, endSec } of retentionRanges) {
-    const clipStart = Math.floor(startSec);
-    const clipDuration = Math.floor(endSec - startSec);
- codex/replace-youtube-comment-parsing-with-retentionranges-logic
-    const start = clipStart;
-    const end = start + clipDuration;
-
-    const start = Math.max(clipStart, 0), end = start + clipDuration;
- main
-
-    // 1) Download main clip w/ audio
-    const mainName = `${videoId}_${start}.mp4`;
-    const mainPath = path.join(clipsDir, mainName);
-    await ytdlp(normalized, {
-      format: 'bestvideo+bestaudio/best',
-      output: mainPath,
-      downloadSections: `*${toHHMMSS(start)}-${toHHMMSS(end)}`,
-      mergeOutputFormat: 'mp4'
-    });
-
-    // 2) Extract audio → WAV for Whisper
-    const audioName = `${videoId}_${start}.wav`;
-    const audioPath = path.join(clipsDir, audioName);
-    await new Promise((resolve, reject) => {
-      ffmpeg(mainPath)
-        .noVideo()
-        .audioCodec('pcm_s16le')
-        .audioChannels(1)
-        .audioFrequency(16000)
-        .format('wav')
-        .on('end', resolve)
-        .on('error', reject)
-        .save(audioPath);
-    });
-
-    // 3) Transcribe with Whisper → SRT, fallback to yt-dlp auto-subs
-    let srtPath = null;
-    try {
-      const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath),
-        model: 'whisper-1',
-        response_format: 'verbose_json'
+      const mainName = `${videoId}_${start}.mp4`;
+      const mainPath = path.join(clipsDir, mainName);
+      await ytdlp(normalized, {
+        format: 'bestvideo+bestaudio/best',
+        output: mainPath,
+        downloadSections: `*${toHHMMSS(start)}-${toHHMMSS(end)}`,
+        mergeOutputFormat: 'mp4'
       });
-      const segments = transcription.segments;
-      const srt = segments.map((seg, i) => {
-        const a = new Date(seg.start * 1000).toISOString().substr(11,12).replace('.',',');
-        const b = new Date(seg.end   * 1000).toISOString().substr(11,12).replace('.',',');
-        return `${i+1}\n${a} --> ${b}\n${seg.text.trim()}\n`;
-      }).join('\n');
-      srtPath = path.join(clipsDir, `${videoId}_${start}.srt`);
-      fs.writeFileSync(srtPath, srt);
-    } catch (whisperErr) {
-      console.error('⚠️ Whisper failed:', whisperErr);
-      console.log('→ Falling back to YouTube auto-captions via yt-dlp…');
+
+      const audioName = `${videoId}_${start}.wav`;
+      const audioPath = path.join(clipsDir, audioName);
+      await new Promise((resolve, reject) => {
+        ffmpeg(mainPath)
+          .noVideo()
+          .audioCodec('pcm_s16le')
+          .audioChannels(1)
+          .audioFrequency(16000)
+          .format('wav')
+          .on('end', resolve)
+          .on('error', reject)
+          .save(audioPath);
+      });
+
+      let srtPath = null;
       try {
-        await ytdlp(normalized, {
-          writeautomaticsub: true,
-          sublangs: 'en',
-          skipDownload: true,
-          output: path.join(clipsDir, `${videoId}_${start}_yt.%(ext)s`)
+        const transcription = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(audioPath),
+          model: 'whisper-1',
+          response_format: 'verbose_json'
         });
-        const found = fs.readdirSync(clipsDir).find(f =>
-          f.startsWith(`${videoId}_${start}_yt.`) && /\.(srt|vtt)$/.test(f)
-        );
-        if (found) srtPath = path.join(clipsDir, found);
-      } catch (subErr) {
-        console.warn('⚠️ yt-dlp subtitle fallback failed:', subErr);
+        const segments = transcription.segments;
+        const srt = segments.map((seg, i) => {
+          const a = new Date(seg.start * 1000).toISOString().substr(11,12).replace('.',',');
+          const b = new Date(seg.end   * 1000).toISOString().substr(11,12).replace('.',',');
+          return `${i+1}\n${a} --> ${b}\n${seg.text.trim()}\n`;
+        }).join('\n');
+        srtPath = path.join(clipsDir, `${videoId}_${start}.srt`);
+        fs.writeFileSync(srtPath, srt);
+      } catch (whisperErr) {
+        console.error('⚠️ Whisper failed:', whisperErr);
+        console.log('→ Falling back to YouTube auto-captions via yt-dlp…');
+        try {
+          await ytdlp(normalized, {
+            writeautomaticsub: true,
+            sublangs: 'en',
+            skipDownload: true,
+            output: path.join(clipsDir, `${videoId}_${start}_yt.%(ext)s`)
+          });
+          const found = fs.readdirSync(clipsDir).find(f =>
+            f.startsWith(`${videoId}_${start}_yt.`) && /\.(srt|vtt)$/.test(f)
+          );
+          if (found) srtPath = path.join(clipsDir, found);
+        } catch (subErr) {
+          console.warn('⚠️ yt-dlp subtitle fallback failed:', subErr);
+        }
       }
-    }
 
-    // 4) Overlay background & clip
-    let intermediate = mainPath;
-    if (background && backgroundSources[background]) {
-      try {
-        const bgUrl = backgroundSources[background];
-        const rStart = Math.floor(Math.random() * 300);
-        const bgName = `${videoId}_${start}_bg.mp4`;
-        const bgPath = path.join(clipsDir, bgName);
-        await ytdlp(bgUrl, {
-          format: 'bestvideo+bestaudio/best',
-          output: bgPath,
-          downloadSections: `*${toHHMMSS(rStart)}-${toHHMMSS(rStart+30)}`,
-          mergeOutputFormat: 'mp4'
-        });
+      let intermediate = mainPath;
+      if (background && backgroundSources[background]) {
+        try {
+          const bgUrl = backgroundSources[background];
+          const rStart = Math.floor(Math.random() * 300);
+          const bgName = `${videoId}_${start}_bg.mp4`;
+          const bgPath = path.join(clipsDir, bgName);
+          await ytdlp(bgUrl, {
+            format: 'bestvideo+bestaudio/best',
+            output: bgPath,
+            downloadSections: `*${toHHMMSS(rStart)}-${toHHMMSS(rStart+30)}`,
+            mergeOutputFormat: 'mp4'
+          });
 
-        const overName = `${videoId}_${start}_overlay.mp4`;
-        const overPath = path.join(clipsDir, overName);
-        const yOff = position === 'top'
-          ? '960+10'
-          : position === 'center'
-            ? '960+(960-text_h)/2'
-            : '960+(960-text_h)-10';
-        const filters = [
-          '[0:v]scale=-2:960,crop=1080:960,pad=1080:1920:0:960:black[bgp]',
-          '[1:v]scale=1080:-2,pad=1080:960:(ow-iw)/2:0:black[mc]',
-          '[bgp][mc]overlay=0:0[cmb]'
-        ];
-        await new Promise((resolve, reject) => {
-          ffmpeg()
-            .input(bgPath)
-            .input(mainPath)
-            .complexFilter(filters)
-            .outputOptions([
-              '-map','[cmb]',
-              '-map','1:a',
-              '-c:v','libx264',
-              '-c:a','aac',
-              '-b:a','128k',
-              '-shortest'
-            ])
-            .on('stderr', console.error)
-            .on('end', resolve)
-            .on('error', reject)
-            .save(overPath);
-        });
-        intermediate = overPath;
-      } catch (overlayErr) {
-        console.warn('⚠️ Overlay failed; using raw clip:', overlayErr.message);
+          const overName = `${videoId}_${start}_overlay.mp4`;
+          const overPath = path.join(clipsDir, overName);
+          const filters = [
+            '[0:v]scale=-2:960,crop=1080:960,pad=1080:1920:0:960:black[bgp]',
+            '[1:v]scale=1080:-2,pad=1080:960:(ow-iw)/2:0:black[mc]',
+            '[bgp][mc]overlay=0:0[cmb]'
+          ];
+          await new Promise((resolve, reject) => {
+            ffmpeg()
+              .input(bgPath)
+              .input(mainPath)
+              .complexFilter(filters)
+              .outputOptions([
+                '-map','[cmb]',
+                '-map','1:a',
+                '-c:v','libx264',
+                '-c:a','aac',
+                '-b:a','128k',
+                '-shortest'
+              ])
+              .on('stderr', console.error)
+              .on('end', resolve)
+              .on('error', reject)
+              .save(overPath);
+          });
+          intermediate = overPath;
+        } catch (overlayErr) {
+          console.warn('⚠️ Overlay failed; using raw clip:', overlayErr.message);
+        }
       }
-    }
 
- codex/wrap-subtitle-burning-in-file-existence-check
-    // 5) Burn in subtitles if available
-    const finalName = `${videoId}_${start}_final.mp4`;
-    const finalPath = path.join(clipsDir, finalName);
-    if (srtPath && fs.existsSync(srtPath)) {
-
-    // 5) Burn in subtitles / caption text if provided
-    const filters = [];
-    if (srtPath) filters.push(`subtitles=${srtPath}`);
-    if (captionText) {
-      const yExpr = position === 'top'
-        ? '10'
-        : position === 'center'
-          ? '(h-text_h)/2'
-          : 'h-text_h-10';
-      const draw = [
-        `font=${fontFamily}`,
-        `text='${escapeDrawtext(captionText)}'`,
-        `fontcolor=${color}`,
-        `fontsize=${fontSize}`,
-        'x=(w-text_w)/2',
-        `y=${yExpr}`,
-        outline ? 'bordercolor=black:borderw=2' : 'borderw=0'
-      ].join(':');
-      filters.push(`drawtext=${draw}`);
-    }
-
-    if (filters.length) {
       const finalName = `${videoId}_${start}_final.mp4`;
       const finalPath = path.join(clipsDir, finalName);
- main
-      await new Promise((resolve, reject) => {
-        ffmpeg(intermediate)
- codex/modify-ffmpeg-command-to-apply-subtitles
-          .addInputOption('-hwaccel', 'auto')
-          .input(intermediate)
-          .videoFilter(`subtitles=${srtPath.replace(/\\/g, '\\\\')}`)
-          .outputOptions([
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-c:a', 'copy',
-            '-movflags', '+faststart',
-            '-threads', '1'
-          ])
+      if (srtPath && fs.existsSync(srtPath)) {
+        const filters = [];
+        if (srtPath) filters.push(`subtitles=${srtPath.replace(/\\/g, '\\\\')}`);
+        if (captionText) {
+          const yExpr = pos === 'top'
+            ? '10'
+            : pos === 'center'
+              ? '(h-text_h)/2'
+              : 'h-text_h-10';
+          const draw = [
+            `font=${fFamily}`,
+            `text='${escapeDrawtext(captionText)}'`,
+            `fontcolor=${fColor}`,
+            `fontsize=${fSize}`,
+            'x=(w-text_w)/2',
+            `y=${yExpr}`,
+            fOutline ? 'bordercolor=black:borderw=2' : 'borderw=0'
+          ].join(':');
+          filters.push(`drawtext=${draw}`);
+        }
 
-          .videoFilter(filters.join(','))
-          .outputOptions(['-c:a','copy','-shortest'])
-        main
-          .on('stderr', console.error)
-          .on('end', () => { resolve(); })
-          .on('error', err => { reject(err); })
-          .save(finalPath);
-      });
-    } else {
-      console.warn('Subtitle file not found or invalid: ' + srtPath);
-      fs.copyFileSync(intermediate, finalPath);
+        await new Promise((resolve, reject) => {
+          ffmpeg(intermediate)
+            .addInputOption('-hwaccel', 'auto')
+            .input(intermediate)
+            .videoFilter(filters.join(','))
+            .outputOptions([
+              '-c:v', 'libx264',
+              '-preset', 'ultrafast',
+              '-c:a', 'copy',
+              '-movflags', '+faststart',
+              '-threads', '1'
+            ])
+            .on('stderr', console.error)
+            .on('end', () => { resolve(); })
+            .on('error', err => { reject(err); })
+            .save(finalPath);
+        });
+      } else {
+        console.warn('Subtitle file not found or invalid: ' + srtPath);
+        fs.copyFileSync(intermediate, finalPath);
+      }
+      results.push({ url: `/clips/${finalName}`, start, end });
     }
-    results.push({ url: `/clips/${finalName}`, start, end });
-  }
-  else {
+  } else {
     return res.status(400).json({ message: 'Invalid source param' });
   }
 
